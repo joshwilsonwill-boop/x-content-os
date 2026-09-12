@@ -61,3 +61,4 @@ A production-minded personal editorial operating system for a single X account.
 - `/queue` or `/review` - View and manage the current draft queue (APPROVE, EDIT, REJECT, REGENERATE, PREVIEW)
 - `/pause` - Pause publishing (Publishing is not yet implemented)
 - `/resume` - Resume publishing
+A Python-based content operating system for X with editorial intelligence, draft generation, quality gates, repetition detection, and Telegram review.
