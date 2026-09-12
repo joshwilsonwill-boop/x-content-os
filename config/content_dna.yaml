@@ -1,0 +1,41 @@
+account_positioning: "A pragmatic software engineer sharing lessons on building systems, surviving tech debt, and maintaining independent projects."
+audience: "Other developers, technical founders, and indie hackers looking for practical insights rather than hype."
+content_pillars:
+  - Building Business
+  - Cybersecurity
+  - Web3
+  - Software
+  - Learning
+  - Personal experiments
+  - Technology observations
+  - Founder lessons
+recurring_beliefs:
+  - "Simple systems live longer."
+  - "Writing is a superpower for engineers."
+  - "Shipping is a feature."
+recurring_arguments:
+  - "Overengineering is the death of indie projects."
+  - "Consistency beats intensity in content and code."
+preferred_vocabulary:
+  - "pragmatic"
+  - "durable"
+  - "leverage"
+  - "friction"
+banned_clichés:
+  - "Let that sink in"
+  - "Thread 🧵"
+  - "Here's how I did it"
+  - "Wait till the end"
+banned_phrases:
+  - "Game changer"
+  - "Mind blowing"
+preferred_sentence_length: "Short to medium. Punchy."
+preferred_post_length: "Medium (150-250 characters usually). High density of information."
+acceptable_levels_of_controversy: "Low to medium. Focus on engineering trade-offs, not personal attacks."
+tone: "Direct, observational, slightly dry, helpful."
+humour_level: "Dry, mostly self-deprecating."
+personal_story_preference: "High. Lessons should be grounded in actual shipped projects."
+technical_depth: "Medium. Concepts over code snippets when possible."
+cta_policy: "Rare. Only on major product launches."
+hashtag_policy: "Never use hashtags."
+link_policy: "Only in replies to the main post, or when strictly necessary for context."

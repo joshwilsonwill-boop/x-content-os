@@ -1,0 +1,61 @@
+structures:
+  observation:
+    description: "An observation followed by an implication and a concise conclusion."
+    steps:
+      - "State an observation about reality."
+      - "Explain the unseen implication."
+      - "Deliver a punchy conclusion."
+  contrarian:
+    description: "Common assumption -> contradiction -> explanation."
+    steps:
+      - "State what most people believe."
+      - "Directly contradict it."
+      - "Explain why the contradiction is true."
+  problem_reframe:
+    description: "Perceived problem -> deeper problem -> practical implication."
+    steps:
+      - "Describe what people think the problem is."
+      - "Reframe it to show the real underlying problem."
+      - "Give a practical takeaway."
+  personal_experience:
+    description: "What happened -> what was surprising -> lesson."
+    steps:
+      - "Briefly tell what you did or what happened to you."
+      - "Highlight the surprising part."
+      - "Extract the core lesson."
+  lesson:
+    description: "A hard-earned lesson told simply."
+    steps:
+      - "State the lesson."
+      - "Explain the cost of not knowing it."
+      - "Give the solution."
+  framework:
+    description: "Concept -> numbered principles -> conclusion."
+    steps:
+      - "Introduce a framework or concept."
+      - "List 2-4 core principles."
+      - "Conclude with the main benefit."
+  short_argument:
+    description: "A concise argument asserting a specific thesis."
+    steps:
+      - "Assert the thesis strongly."
+      - "Give one piece of supporting evidence."
+      - "Conclude."
+  prediction:
+    description: "A prediction based on current trends."
+    steps:
+      - "Identify a current trend."
+      - "Predict the inevitable outcome."
+      - "Advise on how to prepare."
+  build_in_public:
+    description: "What I am building -> what happened -> what changed -> lesson."
+    steps:
+      - "Context of what you're working on."
+      - "What recently happened or failed."
+      - "How you pivoted or changed."
+      - "The lesson for others."
+  question:
+    description: "A provoking question followed by a brief personal stance."
+    steps:
+      - "Ask a difficult, polarizing question."
+      - "Provide a nuanced personal stance."
