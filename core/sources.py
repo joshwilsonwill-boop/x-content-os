@@ -27,14 +27,24 @@ class SourceAdapter(Protocol):
         """Fetch raw items from the underlying source."""
         ...
 
+import ssl
+try:
+    import certifi
+    DEFAULT_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    DEFAULT_SSL_CONTEXT = None
+
+MAX_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MB limit
+
 class RSSSourceAdapter:
     """
     Standard-library RSS 2.0 / RSS 1.0 / Atom feed parser.
     Zero external dependencies, fast, deterministic, and testable offline.
     """
-    def __init__(self, config: SourceConfig, timeout: int = 10):
+    def __init__(self, config: SourceConfig, timeout: int = 10, max_bytes: int = MAX_RESPONSE_BYTES):
         self.config = config
         self.timeout = timeout
+        self.max_bytes = max_bytes
 
     def fetch(self) -> List[RawSourceItem]:
         req = urllib.request.Request(
@@ -42,8 +52,23 @@ class RSSSourceAdapter:
             headers={"User-Agent": "x-content-os/1.0 (+https://github.com/joshwilsonwill-boop/x-content-os)"}
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                xml_data = resp.read()
+            kwargs = {"timeout": self.timeout}
+            if DEFAULT_SSL_CONTEXT is not None and self.config.url.startswith("https://"):
+                kwargs["context"] = DEFAULT_SSL_CONTEXT
+
+            with urllib.request.urlopen(req, **kwargs) as resp:
+                cl = resp.headers.get("Content-Length")
+                if cl:
+                    try:
+                        if int(cl) > self.max_bytes:
+                            raise ValueError(f"Payload size {cl} exceeds maximum limit of {self.max_bytes} bytes")
+                    except ValueError as ve:
+                        if "exceeds maximum limit" in str(ve):
+                            raise
+                xml_data = resp.read(self.max_bytes + 1)
+                if len(xml_data) > self.max_bytes:
+                    raise ValueError(f"Payload size exceeds maximum limit of {self.max_bytes} bytes")
+
             return self.parse_xml(xml_data)
         except Exception as e:
             logger.error(f"Failed to fetch RSS feed {self.config.id} ({self.config.url}): {e}")

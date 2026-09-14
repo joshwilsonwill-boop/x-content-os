@@ -423,11 +423,21 @@ async def opportunity_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     
-    data = query.data
-    # opp_<action>_<id>
+    data = query.data or ""
+    # Expected format: opp_<action>_<id>
     parts = data.split("_")
+    if len(parts) != 3 or parts[0] != "opp":
+        logger.warning(f"Malformed opportunity callback data: {data}")
+        await query.edit_message_text("Invalid action payload.")
+        return
+
     action = parts[1]
-    opp_id = int(parts[2])
+    try:
+        opp_id = int(parts[2])
+    except ValueError:
+        logger.warning(f"Invalid opportunity ID in callback data: {data}")
+        await query.edit_message_text("Invalid opportunity ID.")
+        return
     
     db = SessionLocal()
     try:

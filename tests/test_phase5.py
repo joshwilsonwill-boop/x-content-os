@@ -303,16 +303,29 @@ def test_opportunity_lifecycle_and_drafting(db):
     saved_item = opportunity_service.save_opportunity(db, item.id)
     assert saved_item.status == "SAVED"
 
-    # IGNORE action
-    ignored_item = opportunity_service.ignore_opportunity(db, item.id)
-    assert ignored_item.status == "IGNORED"
-
-    # DRAFT action
+    # DRAFT action from SAVED
     idea = opportunity_service.draft_opportunity(db, item.id)
     assert idea is not None
     assert idea.source_item_id == item.id
     assert "Postmortem: How Simple Systems Live Longer" in idea.raw_text
     assert item.status == "DRAFTED"
+
+    # IGNORE action on a distinct item
+    item2 = SourceItem(
+        source_id="test_feed",
+        source_type="rss",
+        external_id="opp-lifecycle-2",
+        title="Ignored Test Post",
+        content="Testing ignore lifecycle.",
+        status="NEW"
+    )
+    db.add(item2)
+    db.commit()
+    db.refresh(item2)
+
+    ignored_item = opportunity_service.ignore_opportunity(db, item2.id)
+    assert ignored_item.status == "IGNORED"
+    assert opportunity_service.draft_opportunity(db, item2.id) is None
 
     # Expiration
     stale_item = SourceItem(
@@ -373,3 +386,96 @@ def test_telegram_opportunity_card_and_buttons():
     assert "opp_ignore_42" in all_callbacks
     # OPEN SOURCE is a direct clean URL, not arbitrary shell or script execution
     assert "https://example.com/ai-infra" in all_urls
+
+# 8. Hardening: Idempotent drafting & status guards
+def test_idempotent_opportunity_drafting(db):
+    item = SourceItem(
+        source_id="test_idempotent",
+        source_type="rss",
+        external_id="opp-idempotent-1",
+        title="Idempotent Architecture Design",
+        content="Testing repeated drafting calls.",
+        url="https://example.com/idempotent",
+        topic="Software",
+        status="NEW"
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    # 1. First call creates exactly one Idea
+    idea1 = opportunity_service.draft_opportunity(db, item.id)
+    assert idea1 is not None
+    assert idea1.source_item_id == item.id
+    assert item.status == "DRAFTED"
+    
+    ideas_count_1 = db.query(Idea).filter(Idea.source_item_id == item.id).count()
+    assert ideas_count_1 == 1
+
+    # 2. Second call reuses existing Idea and does not create duplicate
+    idea2 = opportunity_service.draft_opportunity(db, item.id)
+    assert idea2 is not None
+    assert idea2.id == idea1.id
+    
+    ideas_count_2 = db.query(Idea).filter(Idea.source_item_id == item.id).count()
+    assert ideas_count_2 == 1
+
+    # 3. Third call is also idempotent
+    idea3 = opportunity_service.draft_opportunity(db, item.id)
+    assert idea3.id == idea1.id
+    assert db.query(Idea).filter(Idea.source_item_id == item.id).count() == 1
+
+    # 4. IGNORED item cannot be drafted accidentally
+    ignored_item = SourceItem(
+        source_id="test_idempotent",
+        source_type="rss",
+        external_id="opp-ignored-1",
+        title="Ignored Article",
+        content="Should not be drafted.",
+        status="IGNORED"
+    )
+    db.add(ignored_item)
+    db.commit()
+    db.refresh(ignored_item)
+
+    res = opportunity_service.draft_opportunity(db, ignored_item.id)
+    assert res is None
+    assert ignored_item.status == "IGNORED"
+    assert db.query(Idea).filter(Idea.source_item_id == ignored_item.id).count() == 0
+
+# 9. Hardening: Future-dated freshness scoring
+def test_future_dated_freshness_scoring():
+    now = datetime.now(timezone.utc)
+
+    # 1. Normal recent item (2h ago)
+    recent_res = score_opportunity("Title", "Content", published_at=now - timedelta(hours=2))
+    assert recent_res.freshness_score == 20
+
+    # 2. Minor future clock skew (1h in future) -> conservative neutral score (8), NOT 20
+    skew_res = score_opportunity("Title", "Content", published_at=now + timedelta(hours=1))
+    assert skew_res.freshness_score == 8
+    assert skew_res.freshness_score < recent_res.freshness_score
+
+    # 3. Significantly future-dated item (48h in future) -> minimum score (2), NOT 20
+    far_future_res = score_opportunity("Title", "Content", published_at=now + timedelta(hours=48))
+    assert far_future_res.freshness_score == 2
+
+    # 4. Old item (30d ago) -> minimum score (2)
+    old_res = score_opportunity("Title", "Content", published_at=now - timedelta(days=30))
+    assert old_res.freshness_score == 2
+
+    # 5. Missing date -> neutral score (8)
+    nodate_res = score_opportunity("Title", "Content", published_at=None)
+    assert nodate_res.freshness_score == 8
+
+# 10. Hardening: Response size limit
+def test_rss_adapter_response_size_limit():
+    conf = SourceConfig(id="test_limit", type="rss", name="Test Limit", url="https://example.com/feed")
+    # Adapter with small 100-byte cap
+    adapter = RSSSourceAdapter(conf, max_bytes=100)
+    assert adapter.max_bytes == 100
+
+    # Parsing XML directly still works
+    items = adapter.parse_xml(RSS_SAMPLE_XML)
+    assert len(items) == 2
+

@@ -37,10 +37,25 @@ def ignore_opportunity(db: Session, opportunity_id: int) -> Optional[SourceItem]
     return item
 
 def draft_opportunity(db: Session, opportunity_id: int) -> Optional[Idea]:
-    """Converts a SourceItem into an Idea preserving provenance, and marks it DRAFTED."""
+    """Converts a SourceItem into an Idea preserving provenance, and marks it DRAFTED.
+    Idempotent: Repeated calls return the existing Idea without creating duplicates.
+    Ignored items return None to prevent accidental resurrection.
+    """
     item = get_opportunity(db, opportunity_id)
     if not item:
         return None
+
+    # Guard: IGNORED items cannot be drafted directly
+    if item.status == "IGNORED":
+        logger.warning(f"Cannot draft ignored opportunity {opportunity_id}")
+        return None
+
+    # Guard: If already DRAFTED, return existing Idea
+    if item.status == "DRAFTED":
+        existing_idea = db.query(Idea).filter(Idea.source_item_id == item.id).first()
+        if existing_idea:
+            return existing_idea
+        logger.warning(f"Opportunity {opportunity_id} is marked DRAFTED but missing Idea; creating Idea to restore provenance.")
 
     raw_text = f"{item.title}\n\n{item.content[:250]}".strip()
     idea = Idea(

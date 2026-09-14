@@ -82,10 +82,16 @@ def score_opportunity(
         if published_at.tzinfo is None:
             published_at = published_at.replace(tzinfo=timezone.utc)
         age_hours = (now - published_at).total_seconds() / 3600.0
+        
         if age_hours < 0:
-            age_hours = 0
-            
-        if age_hours <= 12:
+            # Future-dated timestamp handling:
+            # Minor clock skew (within 2 hours into future): conservative neutral score
+            # Significant future date (>2 hours into future): minimum freshness
+            if age_hours >= -2.0:
+                freshness = 8
+            else:
+                freshness = 2
+        elif age_hours <= 12:
             freshness = 20
         elif age_hours <= 24:
             freshness = 18

@@ -1,8 +1,8 @@
 sources:
   - id: python_news
     type: rss
-    name: Python Software Foundation News
-    url: https://feeds.feedburner.com/PythonSoftwareFoundationNews
+    name: Python Insider News
+    url: https://blog.python.org/feeds/posts/default
     enabled: true
     topics:
       - technology
