@@ -11,8 +11,10 @@ from telegram.ext import (
     ConversationHandler,
 )
 
+import html
+from telegram.constants import ParseMode
 from core.db import SessionLocal
-from core.services import idea_service, draft_service, system_service
+from core.services import idea_service, draft_service, system_service, opportunity_service, ingestion_service
 from core.services.draft_generation_service import generate_drafts, get_draft_quality_report
 from core.draft_generator import TemplateDraftGenerator
 from core.logging import get_logger, log_action
@@ -334,7 +336,143 @@ async def generate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     finally:
         db.close()
-    return ConversationHandler.END
+def format_opportunity_card(opp) -> str:
+    s_id = html.escape(str(opp.source_id))
+    s_topic = html.escape(str(opp.topic or "Technology"))
+    s_title = html.escape(str(opp.title or "Untitled"))
+    
+    score = int(opp.opportunity_score or 0)
+    rel = int(opp.relevance_score or 0)
+    fresh = int(opp.freshness_score or 0)
+    orig = int(opp.original_angle_score or 0)
+    aud = int(opp.audience_value_score or 0)
+    conv = int(opp.conversation_score or 0)
+    risk = int(opp.spam_risk_score or 0)
+    risk_label = "Low" if risk <= 3 else ("Medium" if risk <= 6 else "High")
+    
+    why_it_matters = html.escape(f"Matches pillar '{opp.topic or 'Technology'}' with freshness {fresh}/20 and developer audience signal.")
+    suggested_angle = html.escape(f"Contrarian observation on {opp.topic or 'Technology'}: highlight systems trade-offs over hype.")
+    
+    return (
+        f"<b>OPPORTUNITY #{opp.id}</b>\n\n"
+        f"<b>Source:</b> {s_id}\n"
+        f"<b>Topic:</b> {s_topic}\n\n"
+        f"<b>Title:</b>\n{s_title}\n\n"
+        f"<b>Why it matters:</b>\n{why_it_matters}\n\n"
+        f"<b>Opportunity Score:</b> {score}/100\n\n"
+        f"Relevance: {rel}/20 | Freshness: {fresh}/20\n"
+        f"Original Angle: {orig}/20 | Audience Value: {aud}/20\n"
+        f"Conversation: {conv}/10 | Risk: {risk_label}\n\n"
+        f"<b>Suggested angle:</b>\n{suggested_angle}"
+    )
+
+def build_opportunity_keyboard(opp) -> InlineKeyboardMarkup:
+    row1 = []
+    if opp.url and opp.url.startswith(("http://", "https://")):
+        row1.append(InlineKeyboardButton("OPEN SOURCE", url=opp.url))
+    else:
+        row1.append(InlineKeyboardButton("OPEN SOURCE", callback_data=f"opp_open_{opp.id}"))
+    row1.append(InlineKeyboardButton("DRAFT", callback_data=f"opp_draft_{opp.id}"))
+    
+    row2 = [
+        InlineKeyboardButton("SAVE", callback_data=f"opp_save_{opp.id}"),
+        InlineKeyboardButton("IGNORE", callback_data=f"opp_ignore_{opp.id}")
+    ]
+    return InlineKeyboardMarkup([row1, row2])
+
+@require_owner
+async def opportunities_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    db = SessionLocal()
+    try:
+        opps = opportunity_service.get_opportunities(db, status="NEW", limit=5)
+        if not opps:
+            opps = opportunity_service.get_opportunities(db, status="SAVED", limit=5)
+        if not opps:
+            await update.message.reply_text("No active opportunities found. Use /ingest to discover new source signals.")
+            return
+            
+        await update.message.reply_text(f"Found {len(opps)} active opportunity signals:")
+        for opp in opps:
+            card_text = format_opportunity_card(opp)
+            reply_markup = build_opportunity_keyboard(opp)
+            await update.message.reply_text(card_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+    finally:
+        db.close()
+
+@require_owner
+async def ingest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Running source ingestion...")
+    db = SessionLocal()
+    try:
+        res = ingestion_service.run_ingestion(db)
+        text = (
+            f"Ingestion complete\n\n"
+            f"Sources checked: {res.sources_checked}\n"
+            f"Items fetched: {res.items_fetched}\n"
+            f"New items: {res.new_items}\n"
+            f"Duplicates: {res.duplicates}\n"
+            f"High-opportunity items: {res.high_opportunity_items}\n"
+            f"Errors: {res.errors}"
+        )
+        await update.message.reply_text(text)
+    finally:
+        db.close()
+
+@require_owner
+async def opportunity_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    # opp_<action>_<id>
+    parts = data.split("_")
+    action = parts[1]
+    opp_id = int(parts[2])
+    
+    db = SessionLocal()
+    try:
+        if action == "save":
+            opportunity_service.save_opportunity(db, opp_id)
+            await query.edit_message_text(f"Opportunity #{opp_id} SAVED.")
+        elif action == "ignore":
+            opportunity_service.ignore_opportunity(db, opp_id)
+            await query.edit_message_text(f"Opportunity #{opp_id} IGNORED.")
+        elif action == "open":
+            item = opportunity_service.get_opportunity(db, opp_id)
+            url = item.url if item and item.url else "No URL available."
+            await query.message.reply_text(f"Source URL for #{opp_id}:\n{url}")
+        elif action == "draft":
+            idea = opportunity_service.draft_opportunity(db, opp_id)
+            if not idea:
+                await query.edit_message_text(f"Opportunity #{opp_id} could not be drafted.")
+                return
+            await query.edit_message_text(f"Opportunity #{opp_id} converted to Idea #{idea.id}!\nGenerating 3 draft variants...")
+            
+            generator = TemplateDraftGenerator()
+            drafts = generate_drafts(db, idea.id, "observation", generator, variant_count=3)
+            for d in drafts:
+                warnings_text = ""
+                report = get_draft_quality_report(db, d.id)
+                if report and report.warnings:
+                    warnings_text = "\nWarnings:\n" + "\n".join(report.warnings)
+                    
+                text = (
+                    f"Variant #{d.variant_number}\n"
+                    f"Format: {d.format}\n"
+                    f"Status: {d.status}\n"
+                    f"Score: {d.quality_score}/10\n"
+                    f"Chars: {d.character_count}/280\n"
+                    f"{warnings_text}\n\n"
+                    f"{d.text}"
+                )
+                keyboard = []
+                if d.status != "FAILED":
+                    keyboard.append([InlineKeyboardButton("APPROVE", callback_data=f"approve_{d.id}")])
+                keyboard.append([InlineKeyboardButton("EDIT", callback_data=f"edit_{d.id}"), InlineKeyboardButton("REJECT", callback_data=f"reject_{d.id}")])
+                keyboard.append([InlineKeyboardButton("REGENERATE", callback_data=f"regenerate_{d.id}")])
+                await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    finally:
+        db.close()
 
 def setup_application(token: str) -> Application:
     application = Application.builder().token(token).build()
@@ -375,8 +513,12 @@ def setup_application(token: str) -> Application:
     application.add_handler(CommandHandler("ideas", ideas))
     application.add_handler(CommandHandler("queue", queue_cmd))
     application.add_handler(CommandHandler("review", review_cmd))
+    application.add_handler(CommandHandler("opportunities", opportunities_cmd))
+    application.add_handler(CommandHandler("signals", opportunities_cmd))
+    application.add_handler(CommandHandler("ingest", ingest_cmd))
     
     application.add_handler(CallbackQueryHandler(button_callback, pattern="^(approve|reject|preview|regenerate)_"))
     application.add_handler(CallbackQueryHandler(generate_callback, pattern="^gen_"))
+    application.add_handler(CallbackQueryHandler(opportunity_callback, pattern="^opp_"))
 
     return application

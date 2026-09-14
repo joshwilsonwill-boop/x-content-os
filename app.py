@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Run in dry-run mode (no publishing/API mutations)")
     parser.add_argument("--init-db", action="store_true", help="Initialize the database schema")
     parser.add_argument("--telegram", action="store_true", help="Start the Telegram bot")
+    parser.add_argument("--ingest", action="store_true", help="Run source ingestion and opportunity discovery")
     
     args = parser.parse_args()
 
@@ -36,6 +37,28 @@ def main():
         log_action(logger, 20, "db", "init", "success", msg="Database initialized.")
         sys.exit(0)
         
+    if args.ingest:
+        from core.db import SessionLocal
+        from core.services.ingestion_service import run_ingestion
+        db = SessionLocal()
+        try:
+            print("Starting source ingestion...")
+            result = run_ingestion(db)
+            print("\nIngestion complete\n")
+            print(f"Sources checked: {result.sources_checked}")
+            print(f"Items fetched: {result.items_fetched}")
+            print(f"New items: {result.new_items}")
+            print(f"Duplicates: {result.duplicates}")
+            print(f"High-opportunity items: {result.high_opportunity_items}")
+            print(f"Errors: {result.errors}")
+            if result.error_details:
+                print("\nError summary:")
+                for err in result.error_details:
+                    print(f"- {err}")
+        finally:
+            db.close()
+        sys.exit(0)
+
     if args.telegram:
         token = os.getenv("TELEGRAM_BOT_TOKEN")
         if not token:

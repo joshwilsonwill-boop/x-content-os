@@ -14,7 +14,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 def init_db():
-    from core.models import Idea  # Import models here to ensure they are registered
+    from core.models import Idea, Draft, AppState, SourceItem  # Import models here to ensure they are registered
     Base.metadata.create_all(bind=engine)
     logger.info("Database initialized", extra={"component": "db", "action": "init", "status": "success"})
 

@@ -1,0 +1,16 @@
+sources:
+  - id: python_news
+    type: rss
+    name: Python Software Foundation News
+    url: https://feeds.feedburner.com/PythonSoftwareFoundationNews
+    enabled: true
+    topics:
+      - technology
+      - software
+  - id: example_cyber
+    type: rss
+    name: Example Cybersecurity Feed
+    url: https://example.com/rss
+    enabled: false
+    topics:
+      - cybersecurity
