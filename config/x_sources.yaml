@@ -1,0 +1,28 @@
+# Official X API v2 Search Queries
+# Queries follow official v2 query syntax:
+# - Negations: -is:retweet -is:reply
+# - Language filter: lang:en
+# - Parenthesized keyword logic
+# Note: Keep the number of queries small and intentional to respect rate limits.
+
+queries:
+  - id: ai_software_architecture
+    query: "(AI OR LLM) (architecture OR \"systems engineering\" OR database OR latency) -is:retweet -is:reply lang:en"
+    enabled: true
+    description: "Engineering discussions on AI infrastructure and software architecture"
+    max_results: 10
+    topic: "Technology"
+
+  - id: cybersecurity_incidents
+    query: "(vulnerability OR postmortem OR \"zero-day\" OR CVE) (database OR kernel OR backend) -is:retweet -is:reply lang:en"
+    enabled: true
+    description: "Security postmortems, vulnerabilities, and backend system flaws"
+    max_results: 10
+    topic: "Cybersecurity"
+
+  - id: indie_software_systems
+    query: "(\"simple systems\" OR \"tech debt\" OR \"building in public\" OR \"indie hacker\") (pragmatic OR durable OR scale) -is:retweet -is:reply lang:en"
+    enabled: true
+    description: "Pragmatic software architecture and founder lessons on simple systems"
+    max_results: 10
+    topic: "Building Business"

@@ -8,11 +8,18 @@ from core.logging import get_logger, log_action
 
 logger = get_logger(__name__)
 
-def get_opportunities(db: Session, status: Optional[str] = "NEW", limit: int = 10) -> List[SourceItem]:
-    """Returns top opportunities ordered by opportunity_score desc."""
+def get_opportunities(
+    db: Session,
+    status: Optional[str] = "NEW",
+    source_type: Optional[str] = None,
+    limit: int = 10
+) -> List[SourceItem]:
+    """Returns top opportunities ordered by opportunity_score desc, optionally filtered by status and source_type."""
     query = db.query(SourceItem)
     if status:
         query = query.filter(SourceItem.status == status)
+    if source_type:
+        query = query.filter(SourceItem.source_type == source_type)
     return query.order_by(desc(SourceItem.opportunity_score)).limit(limit).all()
 
 def get_opportunity(db: Session, opportunity_id: int) -> Optional[SourceItem]:

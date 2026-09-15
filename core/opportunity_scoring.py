@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, timezone
 from dataclasses import dataclass
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Any
 from core.content_dna import ContentDNA, load_content_dna
 
 @dataclass
@@ -39,7 +39,9 @@ def score_opportunity(
     content: str,
     published_at: Optional[datetime] = None,
     topic: Optional[str] = None,
-    dna: Optional[ContentDNA] = None
+    dna: Optional[ContentDNA] = None,
+    raw_metadata: Optional[Dict[str, Any]] = None,
+    source_type: Optional[str] = None
 ) -> OpportunityScoreResult:
     """
     Scores an external source signal deterministically across 6 editorial dimensions:
@@ -129,6 +131,12 @@ def score_opportunity(
     # Look for numbers/metrics indicating concrete substance
     if re.search(r"\b\d+(\.\d+)?(k|m|%|x|ms|s|gb|tb|kb)?\b", text):
         audience_value += 2
+    
+    # Optional social proof/engagement check if metadata is present
+    metrics = (raw_metadata or {}).get("public_metrics", {})
+    if isinstance(metrics, dict):
+        if metrics.get("like_count", 0) >= 10 or metrics.get("retweet_count", 0) >= 3:
+            audience_value += 1
     audience_value = min(20, max(0, audience_value))
 
     # 5. Conversation Potential (0-10)
@@ -138,6 +146,14 @@ def score_opportunity(
             conversation += 2
     if "?" in title:
         conversation += 2
+    # Conversation indicators from X metrics
+    if isinstance(metrics, dict):
+        replies = metrics.get("reply_count", 0)
+        quotes = metrics.get("quote_count", 0)
+        if replies >= 5 or quotes >= 2:
+            conversation += 2
+        elif replies >= 1:
+            conversation += 1
     conversation = min(10, max(0, conversation))
 
     # 6. Spam / Low-Value Risk (0-10)
@@ -158,14 +174,25 @@ def score_opportunity(
     overall_score = min(100, max(0, int(raw_score * (100.0 / 80.0))))
 
     # Deterministic Explanations
-    why_it_matters = (
-        f"Relevant to pillar '{matched_pillar}' with freshness score {freshness}/20. "
-        f"Shows concrete technical substance for developers."
-    )
-    suggested_angle = (
-        f"Contrarian observation on '{matched_pillar}': Highlight practical engineering trade-offs "
-        f"and systems durability rather than hype."
-    )
+    if source_type == "x":
+        reply_count = metrics.get("reply_count", 0) if isinstance(metrics, dict) else 0
+        why_it_matters = (
+            f"Active X discussion around '{matched_pillar}' with {reply_count} replies and freshness {freshness}/20. "
+            f"Aligns with developer audience themes."
+        )
+        suggested_angle = (
+            f"Perspective on '{matched_pillar}': Address the underlying technical trade-offs "
+            f"and systems design principles discussed in the post."
+        )
+    else:
+        why_it_matters = (
+            f"Relevant to pillar '{matched_pillar}' with freshness score {freshness}/20. "
+            f"Shows concrete technical substance for developers."
+        )
+        suggested_angle = (
+            f"Contrarian observation on '{matched_pillar}': Highlight practical engineering trade-offs "
+            f"and systems durability rather than hype."
+        )
 
     return OpportunityScoreResult(
         overall_score=overall_score,

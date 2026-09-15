@@ -340,6 +340,8 @@ def format_opportunity_card(opp) -> str:
     s_id = html.escape(str(opp.source_id))
     s_topic = html.escape(str(opp.topic or "Technology"))
     s_title = html.escape(str(opp.title or "Untitled"))
+    s_author = html.escape(str(opp.author or ""))
+    s_content = html.escape(str(opp.content or opp.title or ""))
     
     score = int(opp.opportunity_score or 0)
     rel = int(opp.relevance_score or 0)
@@ -350,28 +352,56 @@ def format_opportunity_card(opp) -> str:
     risk = int(opp.spam_risk_score or 0)
     risk_label = "Low" if risk <= 3 else ("Medium" if risk <= 6 else "High")
     
-    why_it_matters = html.escape(f"Matches pillar '{opp.topic or 'Technology'}' with freshness {fresh}/20 and developer audience signal.")
-    suggested_angle = html.escape(f"Contrarian observation on {opp.topic or 'Technology'}: highlight systems trade-offs over hype.")
-    
-    return (
-        f"<b>OPPORTUNITY #{opp.id}</b>\n\n"
-        f"<b>Source:</b> {s_id}\n"
-        f"<b>Topic:</b> {s_topic}\n\n"
-        f"<b>Title:</b>\n{s_title}\n\n"
-        f"<b>Why it matters:</b>\n{why_it_matters}\n\n"
-        f"<b>Opportunity Score:</b> {score}/100\n\n"
-        f"Relevance: {rel}/20 | Freshness: {fresh}/20\n"
-        f"Original Angle: {orig}/20 | Audience Value: {aud}/20\n"
-        f"Conversation: {conv}/10 | Risk: {risk_label}\n\n"
-        f"<b>Suggested angle:</b>\n{suggested_angle}"
-    )
+    if opp.source_type == "x":
+        metrics = (opp.raw_metadata or {}).get("public_metrics") or {}
+        replies = metrics.get("reply_count", 0)
+        reposts = metrics.get("retweet_count", 0)
+        likes = metrics.get("like_count", 0)
+        
+        why_it_matters = html.escape(
+            f"Active X discussion on '{opp.topic or 'Technology'}' with {replies} replies and freshness {fresh}/20."
+        )
+        suggested_angle = html.escape(
+            f"Perspective on '{opp.topic or 'Technology'}': Address the engineering trade-offs discussed in the post."
+        )
+        
+        return (
+            f"<b>POTENTIAL X CONVERSATION #{opp.id}</b>\n\n"
+            f"<b>Author:</b> {s_author}\n"
+            f"<b>Topic:</b> {s_topic}\n\n"
+            f"<b>Post:</b>\n{s_content}\n\n"
+            f"<b>Why it matters:</b>\n{why_it_matters}\n\n"
+            f"<b>Opportunity Score:</b> {score}/100\n\n"
+            f"Relevance: {rel}/20 | Freshness: {fresh}/20\n"
+            f"Original Angle: {orig}/20 | Audience Value: {aud}/20\n"
+            f"Conversation: {conv}/10 | Risk: {risk_label}\n\n"
+            f"<b>Engagement:</b> {replies} replies | {reposts} reposts | {likes} likes\n\n"
+            f"<b>Suggested angle:</b>\n{suggested_angle}"
+        )
+    else:
+        why_it_matters = html.escape(f"Matches pillar '{opp.topic or 'Technology'}' with freshness {fresh}/20 and developer audience signal.")
+        suggested_angle = html.escape(f"Contrarian observation on {opp.topic or 'Technology'}: highlight systems trade-offs over hype.")
+        
+        return (
+            f"<b>OPPORTUNITY #{opp.id}</b>\n\n"
+            f"<b>Source:</b> {s_id}\n"
+            f"<b>Topic:</b> {s_topic}\n\n"
+            f"<b>Title:</b>\n{s_title}\n\n"
+            f"<b>Why it matters:</b>\n{why_it_matters}\n\n"
+            f"<b>Opportunity Score:</b> {score}/100\n\n"
+            f"Relevance: {rel}/20 | Freshness: {fresh}/20\n"
+            f"Original Angle: {orig}/20 | Audience Value: {aud}/20\n"
+            f"Conversation: {conv}/10 | Risk: {risk_label}\n\n"
+            f"<b>Suggested angle:</b>\n{suggested_angle}"
+        )
 
 def build_opportunity_keyboard(opp) -> InlineKeyboardMarkup:
     row1 = []
+    btn_label = "OPEN POST" if opp.source_type == "x" else "OPEN SOURCE"
     if opp.url and opp.url.startswith(("http://", "https://")):
-        row1.append(InlineKeyboardButton("OPEN SOURCE", url=opp.url))
+        row1.append(InlineKeyboardButton(btn_label, url=opp.url))
     else:
-        row1.append(InlineKeyboardButton("OPEN SOURCE", callback_data=f"opp_open_{opp.id}"))
+        row1.append(InlineKeyboardButton(btn_label, callback_data=f"opp_open_{opp.id}"))
     row1.append(InlineKeyboardButton("DRAFT", callback_data=f"opp_draft_{opp.id}"))
     
     row2 = [
@@ -392,6 +422,25 @@ async def opportunities_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         await update.message.reply_text(f"Found {len(opps)} active opportunity signals:")
+        for opp in opps:
+            card_text = format_opportunity_card(opp)
+            reply_markup = build_opportunity_keyboard(opp)
+            await update.message.reply_text(card_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+    finally:
+        db.close()
+
+@require_owner
+async def xsignals_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    db = SessionLocal()
+    try:
+        opps = opportunity_service.get_opportunities(db, status="NEW", source_type="x", limit=5)
+        if not opps:
+            opps = opportunity_service.get_opportunities(db, status="SAVED", source_type="x", limit=5)
+        if not opps:
+            await update.message.reply_text("No active X signals found. Run python app.py --x-ingest to search recent X posts.")
+            return
+
+        await update.message.reply_text(f"Found {len(opps)} active X conversation signal(s):")
         for opp in opps:
             card_text = format_opportunity_card(opp)
             reply_markup = build_opportunity_keyboard(opp)
@@ -525,6 +574,7 @@ def setup_application(token: str) -> Application:
     application.add_handler(CommandHandler("review", review_cmd))
     application.add_handler(CommandHandler("opportunities", opportunities_cmd))
     application.add_handler(CommandHandler("signals", opportunities_cmd))
+    application.add_handler(CommandHandler("xsignals", xsignals_cmd))
     application.add_handler(CommandHandler("ingest", ingest_cmd))
     
     application.add_handler(CallbackQueryHandler(button_callback, pattern="^(approve|reject|preview|regenerate)_"))
